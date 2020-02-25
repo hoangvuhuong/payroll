@@ -1,0 +1,36 @@
+image: docker:git
+    
+variables:
+  DOCKER_TLS_CERTDIR: ""
+
+services:
+  - docker:dind
+
+stages:
+  - maven-build
+  - docker-build
+  
+maven-build:
+  image: maven:3-jdk-8
+  stage: maven-build
+  artifacts:
+    paths:
+      - target/*.jar
+    expire_in: 10 mins
+  script: 
+    - "mkdir $CI_PROJECT_DIR/src/main/resources"
+    - 'if test "$CI_BUILD_REF_NAME" = "develop";then cat $DEV_CONFIG_FILE >> $CI_PROJECT_DIR/src/main/resources/application.yml;else cat $PROD_CONFIG_FILE >> $CI_PROJECT_DIR/src/main/resources/application.yml;fi;'
+    - "mvn package -DskipTests"
+
+docker-build:
+    stage: docker-build
+    dependencies:
+        - maven-build
+    script:
+        - 'docker build -t $REGISTRY_HOST/$IMAGE_NAME:$CI_BUILD_REF_NAME .'
+        - 'docker login -u $REGISTRY_USERNAME -p $REGISTRY_PASSWORD $REGISTRY_HOST'
+        - 'docker push $REGISTRY_HOST/$IMAGE_NAME:$CI_BUILD_REF_NAME'
+    only:
+        refs:
+            - develop
+            - master
